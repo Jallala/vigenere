@@ -1,0 +1,13 @@
+[package]
+name = "vigenere-base64"
+version = "0.1.0"
+authors = ["Jonatan Ojala <jojala@igpte.ch>"]
+edition = "2018"
+
+
+[profile.release]
+lto = "fat"
+
+[dependencies]
+vigenere = {path = "../"}
+base64 = "0.10.1"
