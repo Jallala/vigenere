@@ -1,15 +1,21 @@
-#![feature(exclusive_range_pattern)]
+#![feature(lang_items)]
+#![no_std]
+#[macro_use]
+extern crate alloc;
 
-use std::{fmt, ptr};
-use std::cmp::min;
-
-pub mod key;
-pub mod table;
-pub mod decipher;
-#[cfg(encrypt)] mod encrypt;
+use alloc::{string::String, string::ToString, vec::Vec};
+use core::{cmp::min, fmt, ptr};
 
 use key::Key;
 use table::ALPHABET_LOWER_UPPER_A_Z;
+
+pub mod key;
+pub mod table;
+#[cfg(encrypt)]
+mod encrypt;
+
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 const BUF_NOT_VALID_UTF8: &'static str = "<Not valid UTF-8>";
 
@@ -27,7 +33,7 @@ impl<'t> Cipher<'t> {
         let mut buf = vec![b'A'; text.len()];
         let mut raw_ptr = buf.as_mut_slice().as_mut_ptr();
         let key = Key::first();
-        let compact_size= text.iter()
+        let compact_size = text.iter()
             .filter(|c| c.is_ascii_alphabetic())
             .count();
 
@@ -64,7 +70,6 @@ impl<'t> Cipher<'t> {
                 .iter()
                 .cycle())
             .enumerate() {
-
             let deciphered = Cipher::decipher_char_using_table(*cipher, *key);
             unsafe {
                 let loc = *self.pointers_to_buf.get_unchecked_mut(idx);
@@ -101,10 +106,11 @@ impl<'t> Cipher<'t> {
     }
 
     pub fn buf_to_string(&self) -> String {
-        match String::from_utf8(self.buf.to_vec()) {
-            Ok(s) => s,
-            _ => BUF_NOT_VALID_UTF8.to_string()
-        }
+        Cipher::try_convert_to_utf8(&self.buf.to_vec())
+    }
+
+    pub fn compact_to_string(&self) -> String {
+        Cipher::try_convert_to_utf8(&self.compact_text)
     }
 
     pub fn pointers_to_buf_to_string(&self) -> String {
@@ -115,7 +121,11 @@ impl<'t> Cipher<'t> {
                 work_buf.push(**v)
             }
         };
-        match String::from_utf8(work_buf) {
+        Cipher::try_convert_to_utf8(&work_buf)
+    }
+
+    fn try_convert_to_utf8(vec: &Vec<u8>) -> String {
+        match String::from_utf8(vec.clone()) {
             Ok(s) => s,
             _ => BUF_NOT_VALID_UTF8.to_string()
         }
@@ -135,6 +145,7 @@ impl<'t> fmt::Display for Cipher<'t> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_cipher_decrypt_char_lower() {
         for cipher in b'a'..=b'z' {
@@ -155,5 +166,43 @@ mod tests {
                 assert!(result.is_ascii_uppercase());
             }
         }
+    }
+
+    #[test]
+    fn test_decipher_next_key() {
+        let original_text = "abc123";
+
+        let mut c = Cipher::from_slice(original_text.as_bytes());
+        c.decipher_fully();
+        assert_eq!(c.key.id, 0);
+        assert_eq!(c.key.buf_to_string(), "A");
+        assert_eq!(c.buf_to_string(), original_text.to_string());
+
+        c.decipher_next_key();
+        assert_eq!(c.key.id, 1);
+        assert_eq!(c.key.buf_to_string(), "B");
+        assert_eq!(c.buf_to_string(), "zab123");
+
+        c.decipher_next_key();
+        assert_eq!(c.key.id, 2);
+        assert_eq!(c.key.buf_to_string(), "C");
+        assert_eq!(c.buf_to_string(), "yza123");
+
+        while c.key.id < 26 {
+            c.decipher_next_key();
+        }
+        assert_eq!(c.key.buf_to_string(), "AA");
+        assert_eq!(c.buf_to_string(), original_text.to_string());
+        c.decipher_next_key();
+
+        assert_eq!(c.key.id, 27);
+        assert_eq!(c.key.buf_to_string(), "AB");
+        assert_eq!(c.buf_to_string(), "aac123");
+    }
+
+    #[test]
+    fn test_cipher_compact() {
+        let c = Cipher::from_slice(b"a1bc123A=B!\nC");
+        assert_eq!(c.compact_to_string(), "abcABC".to_string());
     }
 }

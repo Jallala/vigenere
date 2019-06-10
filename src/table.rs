@@ -1,4 +1,5 @@
 pub type Table = [[u8; 256]; 256];
+
 pub const ALPHABET_SIZE: usize = 26;
 /// Pre-generated lookup table for alphabet of A-Z
 /// Lowercase a-z is still within mod 26, but accessing the table with it yields the lowercase

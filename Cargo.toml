@@ -8,4 +8,6 @@ edition = "2018"
 [profile.release]
 lto = "fat"
 
+
 [dependencies]
+wee_alloc = "0.4.4"

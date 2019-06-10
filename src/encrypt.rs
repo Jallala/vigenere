@@ -1,6 +1,7 @@
 #[cfg(feature = "encrypt")]
 mod encrypt {
-    use std::mem;
+    use alloc::vec::Vec;
+    use core::mem;
 
     use crate::table::ALPHABET_SIZE;
 

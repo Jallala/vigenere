@@ -1,5 +1,5 @@
-use std::fmt;
-use std::mem;
+use alloc::{string::String, vec::Vec};
+use core::{fmt, mem};
 
 use crate::table::ALPHABET_SIZE;
 
@@ -16,8 +16,8 @@ impl Key {
 
     #[inline]
     pub fn set_id(&mut self, mut id: u64) {
+        self.id = id.clone();
         self.buf.clear();
-        self.id = id;
         loop {
             let div = id / ALPHABET_SIZE as u64;
             let rem = id % ALPHABET_SIZE as u64;
@@ -53,12 +53,12 @@ impl Key {
     /// ```
     /// use vigenere::key::Key;
     ///
-    /// let mut k = Key::from_slice(&b"AA"[..]);
+    /// let mut k = Key::from_slice(b"AA");
     /// let modified = k.advance();
     /// assert_eq!(k.buf_to_string(), "AB");
     /// assert_eq!(modified, 1);
     ///
-    /// let mut k = Key::from_slice(&b"ABZZ"[..]);
+    /// let mut k = Key::from_slice(b"ABZZ");
     /// let modified = k.advance();
     /// assert_eq!(k.buf_to_string(), "ACAA");
     /// assert_eq!(modified, 3);
