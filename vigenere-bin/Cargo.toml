@@ -1,0 +1,15 @@
+[package]
+name = "vigenere-bin"
+version = "0.1.0"
+authors = ["Jonatan Ojala <jojala@igpte.ch>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = "fat"
+
+[dependencies]
+time = "0.1.42"
+base64 = "0.10.1"
+vigenere = {path = "../"}
