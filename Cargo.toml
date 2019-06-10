@@ -3,11 +3,15 @@ name = "vigenere"
 version = "0.1.0"
 authors = ["Jonatan Ojala <jojala@igpte.ch>"]
 edition = "2018"
-
+publish = false
 
 [profile.release]
 lto = "fat"
 
-
 [dependencies]
 wee_alloc = "0.4.4"
+
+[features]
+# The reason we do this is because doctests don't get cfg(test)
+# See: https://github.com/rust-lang/cargo/issues/4669
+test = []
