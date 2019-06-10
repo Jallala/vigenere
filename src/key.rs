@@ -3,9 +3,11 @@ use core::{fmt, mem};
 
 use crate::table::ALPHABET_SIZE;
 
+pub type Id = u128;
+
 #[derive(Debug)]
 pub struct Key {
-    pub id: u64,
+    pub id: Id,
     pub buf: Vec<u8>,
 }
 
@@ -15,12 +17,12 @@ impl Key {
     }
 
     #[inline]
-    pub fn set_id(&mut self, mut id: u64) {
+    pub fn set_id(&mut self, mut id: Id) {
         self.id = id.clone();
         self.buf.clear();
         loop {
-            let div = id / ALPHABET_SIZE as u64;
-            let rem = id % ALPHABET_SIZE as u64;
+            let div = id / ALPHABET_SIZE as Id;
+            let rem = id % ALPHABET_SIZE as Id;
             self.buf.insert(0, b'A' + rem as u8);
             if id < 26 {
                 break;
@@ -40,8 +42,8 @@ impl Key {
                 if !k.is_ascii_alphabetic() {
                     panic!("Invalid characters in key")
                 }
-                id += pow * (k - b'A' + 1) as u64;
-                pow *= ALPHABET_SIZE as u64;
+                id += pow * (k - b'A' + 1) as Id;
+                pow *= ALPHABET_SIZE as Id;
             }
             Key { id: id - 1, buf }
         }
@@ -88,8 +90,8 @@ impl Key {
     }
 }
 
-impl From<u64> for Key {
-    fn from(id: u64) -> Self {
+impl From<Id> for Key {
+    fn from(id: Id) -> Self {
         let mut k = Key::first();
         k.set_id(id);
         k
