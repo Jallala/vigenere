@@ -7,7 +7,15 @@ use vigenere::decipherer::Decipherer;
 use alloc::vec::Vec;
 use vigenere::key::Id;
 
-const SLICE_BUFFER_SIZE: usize = 512;
+// Only set allocator if running `cargo test`
+#[cfg(any(feature = "test", test))]
+use wee_alloc;
+
+#[cfg(any(feature = "test", test))]
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+const SLICE_BUFFER_SIZE: usize = 2 * 192 * core::mem::size_of::<u8>();
 
 #[inline]
 fn is_not_printable(c: u8) -> bool {
@@ -16,9 +24,15 @@ fn is_not_printable(c: u8) -> bool {
 
 #[inline]
 fn is_slice_printable(buf: &[u8]) -> Option<String> {
-    for c in buf {
-        if is_not_printable(*c) {
-            return None;
+    {
+        let mut c = buf.as_ptr();
+        for _ in 0..buf.len() {
+            unsafe {
+                if is_not_printable(*c) {
+                    return None;
+                }
+                c = c.offset(1);
+            }
         }
     }
     match String::from_utf8(buf.to_vec()) {
@@ -27,54 +41,140 @@ fn is_slice_printable(buf: &[u8]) -> Option<String> {
     }
 }
 
-pub trait DecipherBase64 {
-    fn check_for_candidates(&mut self, start_key: Id, end_key: Id, on_candidate: fn(&String));
-    fn vec_fallback(&mut self, start_key: Id, end_key: Id, on_candidate: fn(&String));
+#[inline]
+fn decoded_size(input_size: usize) -> usize {
+    input_size + 3 / 4 * 3
 }
 
+pub trait DecipherBase64 {
+    fn check_for_candidates<F: FnMut(&String)>(&mut self, start: Id, end: Id, on_candidate: F) -> Id where F: FnMut(&String);
+    fn check_for_candidates_vec<F>(&mut self, start: Id, end: Id, on_candidate: F) -> Id where F: FnMut(&String);
+}
+
+
 impl<'t> DecipherBase64 for Decipherer<'t> {
-    fn check_for_candidates(&mut self, start_key: Id, end_key: Id, on_candidate: fn(&String)) {
-        self.key.set_id(start_key);
+    fn check_for_candidates<F: FnMut(&String)>(&mut self, start: Id, end: Id, on_candidate: F) -> Id {
+        let mut on_candidate = on_candidate;
+        {
+            let decoded_length_estimate = decoded_size(self.text.len());
+            if decoded_length_estimate >= SLICE_BUFFER_SIZE {
+                return self.check_for_candidates_vec(start, end, on_candidate);
+            }
+        }
+        self.key.set_id(start);
         self.decipher_fully();
-        if self.text.len() >= SLICE_BUFFER_SIZE { return self.vec_fallback(start_key, end_key, on_candidate); }
+        let mut candidates = 0;
         let mut decode_buf = [0; SLICE_BUFFER_SIZE];
-        'outer: for _ in start_key..end_key {
-            self.decipher_next_key();
+        'outer: loop {
             if let Ok(size) = base64::decode_config_slice(
                 &self.buf, base64::STANDARD, &mut decode_buf) {
-                let mut c = decode_buf.as_ptr();
-                for _ in 0..size {
-                    unsafe {
-                        if is_not_printable(*c) {
-                            continue 'outer;
-                        }
-                        c = c.offset(1);
-                    }
-                }
-                if let Ok(candidate) = String::from_utf8(decode_buf[..size].to_vec()) {
+                assert!(size < decode_buf.len());
+                if let Some(candidate) = is_slice_printable(&decode_buf[..size]) {
+                    candidates += 1;
                     on_candidate(&candidate)
                 }
             }
+            if self.key.id >= end {
+                break candidates
+            }
+            self.decipher_next_key();
         }
     }
 
-    fn vec_fallback(&mut self, start_key: Id, end_key: Id, on_candidate: fn(&String)) {
+    fn check_for_candidates_vec<F>(&mut self, start: Id, end: Id, on_candidate: F) -> Id where F: FnMut(&String){
+        let mut on_candidate = on_candidate;
+        self.key.set_id(start);
+        self.decipher_fully();
         let mut decode_buf = Vec::with_capacity(self.text.len());
-        for _ in start_key..end_key {
+        let mut candidates = 0;
+        loop {
             decode_buf.clear();
-            self.decipher_next_key();
             if let Ok(()) = base64::decode_config_buf(
                 &self.buf, base64::STANDARD, &mut decode_buf) {
                 if let Some(candidate) = is_slice_printable(decode_buf.as_slice()) {
+                    candidates += 1;
                     on_candidate(&candidate)
                 }
             }
+            if self.key.id >= end {
+                break candidates
+            }
+            self.decipher_next_key();
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use alloc::string::ToString;
+    use vigenere::key::Key;
+    use core::iter::repeat;
+
+    fn test_slice(slice: &mut [u8], subst: &[u8], expected_size: usize) {
+        for (idx, ch) in subst.iter().enumerate() {
+            slice[slice.len() - subst.len() + idx] = *ch;
+        }
+        let mut dc = Decipherer::from_slice(slice);
+        let d = |s: &String| assert_eq!(s.len(), expected_size);
+        let found = dc.check_for_candidates(0, 0, d);
+        assert_eq!(found, 1)
+    }
+
+    fn test_implementation_equality(text: &[u8], start: Id, end: Id) {
+        let mut dc_slice = Decipherer::from_slice(text);
+        let mut dc_vec = dc_slice.clone();
+        let mut slice_candidates = vec![];
+        let mut vec_candidates = vec![];
+        let slice_closure = |s: &String| slice_candidates.push(s.clone());
+        let vec_closure = |s: &String| vec_candidates.push(s.clone());
+        let n_slice_candidates = dc_slice.check_for_candidates(start, end, slice_closure);
+        let n_vec_candidates = dc_vec.check_for_candidates(start, end, vec_closure);
+        assert_eq!(n_slice_candidates, n_vec_candidates);
+        assert_eq!(slice_candidates.len(), n_slice_candidates as usize);
+        assert_eq!(vec_candidates.len(), n_vec_candidates as usize);
+        assert_eq!(slice_candidates.len(), vec_candidates.len());
+        for (vec_candidate, slice_candidate) in vec_candidates.iter().zip(slice_candidates.iter()) {
+            assert_eq!(vec_candidate, slice_candidate);
+        }
+    }
+
     #[test]
-    fn foo() {}
+    fn test_slice_buffer_size_is_multiple_of_3_and_4() {
+        assert_eq!(SLICE_BUFFER_SIZE % 3, 0);
+        assert_eq!(SLICE_BUFFER_SIZE % 4, 0);
+    }
+
+    #[test]
+    fn test_upper_estimate_does_not_panic() {
+        const INPUT_LEN: usize = (SLICE_BUFFER_SIZE / 3) * 4;
+        assert_eq!(INPUT_LEN + 3 / 4 * 3, INPUT_LEN);
+        assert_eq!(INPUT_LEN % 4, 0);
+        assert!(SLICE_BUFFER_SIZE > 0);
+        test_slice(&mut [b'6'; INPUT_LEN - 4], b"", SLICE_BUFFER_SIZE - 3);
+        test_slice(&mut [b'6'; INPUT_LEN], b"", SLICE_BUFFER_SIZE);
+        test_slice(&mut [b'6'; INPUT_LEN + 4], b"", SLICE_BUFFER_SIZE + 3);
+        test_slice(&mut [b'6'; INPUT_LEN + 4], b"Yg==", SLICE_BUFFER_SIZE + 1);
+        test_slice(&mut [b'6'; INPUT_LEN], b"Yg==", SLICE_BUFFER_SIZE - 2);
+        test_slice(&mut [b'6'; INPUT_LEN + 4], b"YWE=", SLICE_BUFFER_SIZE + 2);
+        test_slice(&mut [b'6'; INPUT_LEN], b"YWE=", SLICE_BUFFER_SIZE - 1);
+    }
+
+    #[test]
+    fn test_vec_impl_yields_same_results() {
+        let cases = [
+            "".to_string(),
+            "A".to_string(),
+            "Hello, world".to_string(),
+            repeat("A").take((SLICE_BUFFER_SIZE / 3) * 4).collect(),
+            repeat("A").take((SLICE_BUFFER_SIZE / 3) * 4 * 2).collect()
+        ];
+        let ranges = [(0, 0), (0, 1), (1, 1), (1, 10000), (0, 10000), (5000, 10000)];
+        for case in cases.iter() {
+            for (start, end) in ranges.iter() {
+                let v = base64::encode_config(case, base64::STANDARD);
+                test_implementation_equality(v.as_bytes(), *start, *end);
+            }
+        }
+    }
 }

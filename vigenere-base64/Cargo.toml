@@ -11,3 +11,7 @@ lto = "fat"
 [dependencies]
 vigenere = {path = "../"}
 base64 = "0.10.1"
+
+# This is to allow `cargo test` to run
+[dev-dependencies]
+wee_alloc = "0.4.4"

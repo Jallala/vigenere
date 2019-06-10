@@ -11,5 +11,5 @@ lto = "fat"
 
 [dependencies]
 time = "0.1.42"
-base64 = "0.10.1"
 vigenere = {path = "../"}
+vigenere-base64 = {path = "../vigenere-base64/"}
