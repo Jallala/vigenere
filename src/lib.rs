@@ -1,8 +1,8 @@
-#![feature(core_intrinsics, lang_items, alloc_error_handler)]
 #![no_std]
 #[macro_use]
 extern crate alloc;
 
+// Only set allocator if running `cargo test`
 #[cfg(any(feature = "test", test))]
 use wee_alloc;
 #[cfg(any(feature = "test", test))]
