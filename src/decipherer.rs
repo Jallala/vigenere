@@ -129,6 +129,14 @@ impl<'t> fmt::Display for Decipherer<'t> {
     }
 }
 
+impl <'t> Clone for Decipherer<'t> {
+    fn clone(&self) -> Self {
+        let mut c = Decipherer::from_slice(&self.text[..]);
+        c.key.set_id(self.key.id);
+        c
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
