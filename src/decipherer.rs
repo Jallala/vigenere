@@ -11,8 +11,30 @@ pub struct Decipherer<'t> {
     pub key: Key,
     pub text: &'t [u8],
     pub compact_text: Vec<u8>,
-    pub pointers_to_buf: Vec<*mut u8>,
     pub buf: Vec<u8>,
+    pointers_to_buf: Vec<*mut u8>,
+}
+
+macro_rules! decipher_using_table {
+    ($cipher:expr, $key:expr) => {
+        unsafe {
+            *ALPHABET_LOWER_UPPER_A_Z
+                .get_unchecked($cipher as usize)
+                .get_unchecked($key as usize)
+        }
+    };
+}
+
+macro_rules! decipher_to_ptr {
+    ($pointers:expr, $index:expr, $cipher:expr, $key:expr) => {
+        unsafe {
+            (*$pointers.get_unchecked_mut($index))
+                .write(*ALPHABET_LOWER_UPPER_A_Z
+                    .get_unchecked($cipher as usize)
+                    .get_unchecked($key as usize)
+            );
+        }
+    };
 }
 
 impl<'t> Decipherer<'t> {
@@ -41,27 +63,20 @@ impl<'t> Decipherer<'t> {
         Decipherer { key, text, compact_text, pointers_to_buf, buf }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn decipher_char_using_table(cipher: u8, key: u8) -> u8 {
-        unsafe {
-            *ALPHABET_LOWER_UPPER_A_Z
-                .get_unchecked(cipher as usize)
-                .get_unchecked(key as usize)
-        }
+        decipher_using_table!(cipher, key)
     }
 
+    #[inline]
     pub fn decipher_fully(&mut self) {
         for (idx, (cipher, key)) in self.compact_text
             .iter()
-            .zip(self.key.buf
+            .zip(self.key
                 .iter()
                 .cycle())
             .enumerate() {
-            let deciphered = Decipherer::decipher_char_using_table(*cipher, *key);
-            unsafe {
-                let loc = *self.pointers_to_buf.get_unchecked_mut(idx);
-                ptr::write(loc, deciphered);
-            }
+            decipher_to_ptr!(self.pointers_to_buf, idx, *cipher, *key);
         }
     }
 
@@ -69,8 +84,8 @@ impl<'t> Decipherer<'t> {
     #[inline]
     pub fn decipher_next_key(&mut self) {
         // We only need to decipher characters that have been since the last pass
-        // e.g. if cipher is "ABC" and key is changes from "AA" -> "AB",
-        // only "-B-" needs to be deciphered
+        // e.g. if cipher is "ABCD" and key is changes from "AA" -> "AB",
+        // only "-B-D" needs to be deciphered
         let key_characters_modified = self.key.advance();
         let size = self.key.len();
         let modify_every = size - key_characters_modified;
@@ -79,13 +94,7 @@ impl<'t> Decipherer<'t> {
         while idx < self.compact_text.len() {
             let end_of_sequence = modify_every + min(key_characters_modified, self.compact_text.len() - idx);
             for key_idx in modify_every..end_of_sequence {
-                unsafe {
-                    let cipher = *self.compact_text.get_unchecked(idx);
-                    let key = *self.key.buf.get_unchecked(key_idx);
-                    let deciphered = Decipherer::decipher_char_using_table(cipher, key);
-                    let loc = *self.pointers_to_buf.get_unchecked_mut(idx);
-                    ptr::write(loc, deciphered);
-                }
+                decipher_to_ptr!(self.pointers_to_buf, idx, *self.compact_text.get_unchecked(idx), *self.key.get_unchecked(key_idx));
                 idx += 1;
             }
             idx += modify_every;
