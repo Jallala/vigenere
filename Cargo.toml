@@ -6,7 +6,10 @@ edition = "2018"
 publish = false
 
 [profile.release]
-lto = "fat"
+lto = true
+
+[profile.bench]
+lto = true
 
 # This is to allow `cargo test` to run
 [dev-dependencies]

@@ -9,6 +9,10 @@ edition = "2018"
 [profile.release]
 lto = "fat"
 
+[profile.bench]
+lto = "fat"
+
+
 [dependencies]
 time = "0.1.42"
 vigenere = {path = "../"}

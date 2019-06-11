@@ -2,6 +2,8 @@
 use vigenere::decipherer::Decipherer;
 use vigenere_base64::DecipherBase64;
 use time::PreciseTime;
+use vigenere::key::Key;
+use std::convert::TryInto;
 
 fn main() {
     let cipher_text: &'static [u8] =
@@ -9,10 +11,10 @@ fn main() {
         goOitBOM1dSDzHMatdRpmQZpidNehG29mkTxwmDJbGJxsjnVeQT9mTPSwSAOwnuWhSE\
         50ByMpcuJoqGstJOCxqHCtdvG3HJV0TOGuwOIyoOGhwOHgm2GhlZpyISJik3J/";
     let end_key = {
-        let id = vigenere::key::Key::from_slice(b"LIBITINA").id;
-        println!("{}", id);
-        id
+        let v: Key = "LIBITINA".try_into().unwrap();
+        v.id
     };
+    println!("{}", end_key);
     let threads = 4;
     let per_thread = 20000000;
     let start_key = end_key - threads * per_thread;
