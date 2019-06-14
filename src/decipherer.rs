@@ -149,6 +149,7 @@ impl <'t> Clone for Decipherer<'t> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::key::Id;
 
     #[test]
     fn test_cipher_decrypt_char_lower() {
@@ -175,33 +176,24 @@ mod tests {
     #[test]
     fn test_decipher_next_key() {
         let original_text = "abc123";
-
-        let mut c = Decipherer::from_slice(original_text.as_bytes());
-        c.decipher_fully();
-        assert_eq!(c.key.id, 0);
-        assert_eq!(c.key.buf_to_string(), "A");
-        assert_eq!(c.buf_to_string(), original_text.to_string());
-
-        c.decipher_next_key();
-        assert_eq!(c.key.id, 1);
-        assert_eq!(c.key.buf_to_string(), "B");
-        assert_eq!(c.buf_to_string(), "zab123");
-
-        c.decipher_next_key();
-        assert_eq!(c.key.id, 2);
-        assert_eq!(c.key.buf_to_string(), "C");
-        assert_eq!(c.buf_to_string(), "yza123");
-
-        while c.key.id < 26 {
-            c.decipher_next_key();
+        fn check_id_and_buffers(d: &Decipherer, expected: (Id, &str, &str)) {
+            assert_eq!(d.key.id, expected.0);
+            assert_eq!(d.key.buf_to_string(), expected.1.to_string());
+            assert_eq!(d.buf_to_string(), expected.2.to_string());
         }
-        assert_eq!(c.key.buf_to_string(), "AA");
-        assert_eq!(c.buf_to_string(), original_text.to_string());
-        c.decipher_next_key();
-
-        assert_eq!(c.key.id, 27);
-        assert_eq!(c.key.buf_to_string(), "AB");
-        assert_eq!(c.buf_to_string(), "aac123");
+        let mut dc = Decipherer::from_slice(original_text.as_bytes());
+        dc.decipher_fully();
+        check_id_and_buffers(&dc, (0, "A", original_text));
+        dc.decipher_next_key();
+        check_id_and_buffers(&dc, (1, "B", "zab123"));
+        dc.decipher_next_key();
+        check_id_and_buffers(&dc, (2, "C", "yza123"));
+        while dc.key.id < 26 {
+            dc.decipher_next_key();
+        }
+        check_id_and_buffers(&dc, (26, "AA", original_text));
+        dc.decipher_next_key();
+        check_id_and_buffers(&dc, (27, "AB", "aac123"));
     }
 
     #[test]
