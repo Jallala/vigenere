@@ -2,14 +2,14 @@
 extern crate alloc;
 
 use alloc::string::String;
-
-use vigenere::decipherer::Decipherer;
 use alloc::vec::Vec;
-use vigenere::key::Id;
 
 // Only set allocator if running `cargo test`
 #[cfg(any(feature = "test", test))]
 use wee_alloc;
+
+use vigenere::decipherer::Decipherer;
+use vigenere::key::Id;
 
 #[cfg(any(feature = "test", test))]
 #[global_allocator]
@@ -18,17 +18,17 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 const SLICE_BUFFER_SIZE: usize = 2 * 192 * core::mem::size_of::<u8>();
 
 #[inline]
-fn is_not_printable(c: u8) -> bool {
+fn is_unwanted_character(c: u8) -> bool {
     (b'\0' <= c && c < b'\n') || (b'\x0B' <= c && c < b'\r')
 }
 
 #[inline]
-fn is_slice_printable(buf: &[u8]) -> Option<String> {
+fn does_slice_contain_unwanted_characters(buf: &[u8]) -> Option<String> {
     {
         let mut c = buf.as_ptr();
         for _ in 0..buf.len() {
             unsafe {
-                if is_not_printable(*c) {
+                if is_unwanted_character(*c) {
                     return None;
                 }
                 c = c.offset(1);
@@ -55,50 +55,45 @@ pub trait DecipherBase64 {
 impl<'t> DecipherBase64 for Decipherer<'t> {
     fn check_for_candidates<F: FnMut(&String)>(&mut self, start: Id, end: Id, on_candidate: F) -> Id {
         let mut on_candidate = on_candidate;
-        {
-            let decoded_length_estimate = decoded_size(self.text.len());
-            if decoded_length_estimate >= SLICE_BUFFER_SIZE {
-                return self.check_for_candidates_vec(start, end, on_candidate);
-            }
+        let size_decoded_max = decoded_size(self.text.len());
+        if size_decoded_max >= SLICE_BUFFER_SIZE {
+            return self.check_for_candidates_vec(start, end, on_candidate);
         }
         self.key.set_id(start);
         self.decipher_fully();
         let mut candidates = 0;
         let mut decode_buf = [0; SLICE_BUFFER_SIZE];
-        'outer: loop {
+
+        loop {
             if let Ok(size) = base64::decode_config_slice(
                 &self.buf, base64::STANDARD, &mut decode_buf) {
                 assert!(size < decode_buf.len());
-                if let Some(candidate) = is_slice_printable(&decode_buf[..size]) {
+                if let Some(candidate) = does_slice_contain_unwanted_characters(&decode_buf[..size]) {
                     candidates += 1;
                     on_candidate(&candidate)
                 }
             }
-            if self.key.id >= end {
-                break candidates
-            }
+            if self.key.id >= end { return candidates; }
             self.decipher_next_key();
         }
     }
 
-    fn check_for_candidates_vec<F>(&mut self, start: Id, end: Id, on_candidate: F) -> Id where F: FnMut(&String){
+    fn check_for_candidates_vec<F>(&mut self, start: Id, end: Id, on_candidate: F) -> Id where F: FnMut(&String) {
         let mut on_candidate = on_candidate;
         self.key.set_id(start);
         self.decipher_fully();
-        let mut decode_buf = Vec::with_capacity(self.text.len());
         let mut candidates = 0;
+        let mut decode_buf = Vec::with_capacity(decoded_size(self.text.len()));
         loop {
             decode_buf.clear();
             if let Ok(()) = base64::decode_config_buf(
                 &self.buf, base64::STANDARD, &mut decode_buf) {
-                if let Some(candidate) = is_slice_printable(decode_buf.as_slice()) {
+                if let Some(candidate) = does_slice_contain_unwanted_characters(decode_buf.as_slice()) {
                     candidates += 1;
                     on_candidate(&candidate)
                 }
             }
-            if self.key.id >= end {
-                break candidates
-            }
+            if self.key.id >= end { return candidates; }
             self.decipher_next_key();
         }
     }
@@ -106,10 +101,12 @@ impl<'t> DecipherBase64 for Decipherer<'t> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use alloc::string::ToString;
-    use vigenere::key::Key;
     use core::iter::repeat;
+
+    use vigenere::key::Key;
+
+    use super::*;
 
     fn test_slice(slice: &mut [u8], subst: &[u8], expected_size: usize) {
         for (idx, ch) in subst.iter().enumerate() {
