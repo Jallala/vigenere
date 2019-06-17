@@ -106,6 +106,7 @@ impl Key {
 }
 
 impl From<Id> for Key {
+    #[inline]
     fn from(id: Id) -> Self {
         let mut k = Key::first();
         k.set_id(id);
@@ -125,9 +126,15 @@ impl Index<usize> for Key {
 
 impl TryFrom<&str> for Key {
     type Error = &'static str;
-
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Key::from_slice(value.as_bytes())
+    }
+}
+
+impl TryFrom<&[u8]> for Key {
+    type Error = &'static str;
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Key::from_slice(value)
     }
 }
 
@@ -157,7 +164,16 @@ mod tests {
         let mut k = Key::first();
         k.advance();
         assert_eq!(1, k.id);
-        assert_eq!("B", k.buf_to_string());
+        assert_eq!(vec![b'B'], k.buf);
+    }
+
+    #[test]
+    fn test_string_try_into_fails_non_alphabetic() {
+        let k: Result<Key, _> = "abc1".try_into();
+        match k {
+            Ok(_) => assert!(false),
+            Err(_) => {}
+        }
     }
 
     #[bench]
@@ -167,9 +183,17 @@ mod tests {
     }
 
     #[bench]
-    fn bench_from_str(b: &mut Bencher) {
+    fn bench_try_into_str(b: &mut Bencher) {
         b.iter(|| {
-            let mut _k: Key = "ABCDEFGH".try_into().unwrap();
+            let _: Key = "ABCDEFGH".try_into().unwrap();
+        })
+    }
+
+    #[bench]
+    fn bench_try_into_slice(b: &mut Bencher) {
+        const V: &[u8] = b"ABCDEFGH";
+        b.iter(|| {
+            let _: Key = V.as_ref().try_into().unwrap();
         })
     }
 
@@ -180,11 +204,8 @@ mod tests {
 
     #[bench]
     fn bench_from_id(b: &mut Bencher) {
-        let id = {
-            Key::from_slice(b"ABCDEFGH").unwrap().id
-        };
         b.iter(|| {
-            let _: Key = id.into();
+            let _: Key = 8687205885.into();
         })
     }
 }
