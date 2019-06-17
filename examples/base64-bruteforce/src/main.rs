@@ -1,9 +1,10 @@
-
+#![feature(const_fn)]
 use vigenere::decipherer::Decipherer;
 use vigenere_base64::DecipherBase64;
 use time::PreciseTime;
-use vigenere::key::Key;
+use vigenere::key::{Key, Id};
 use std::convert::TryInto;
+
 
 fn main() {
     let cipher_text: &'static [u8] =
