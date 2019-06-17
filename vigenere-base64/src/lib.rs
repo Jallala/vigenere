@@ -1,4 +1,5 @@
 #![no_std]
+#[macro_use]
 extern crate alloc;
 
 use alloc::string::String;
@@ -104,37 +105,7 @@ mod tests {
     use alloc::string::ToString;
     use core::iter::repeat;
 
-    use vigenere::key::Key;
-
     use super::*;
-
-    fn test_slice(slice: &mut [u8], subst: &[u8], expected_size: usize) {
-        for (idx, ch) in subst.iter().enumerate() {
-            slice[slice.len() - subst.len() + idx] = *ch;
-        }
-        let mut dc = Decipherer::from_slice(slice);
-        let d = |s: &String| assert_eq!(s.len(), expected_size);
-        let found = dc.check_for_candidates(0, 0, d);
-        assert_eq!(found, 1)
-    }
-
-    fn test_implementation_equality(text: &[u8], start: Id, end: Id) {
-        let mut dc_slice = Decipherer::from_slice(text);
-        let mut dc_vec = dc_slice.clone();
-        let mut slice_candidates = vec![];
-        let mut vec_candidates = vec![];
-        let slice_closure = |s: &String| slice_candidates.push(s.clone());
-        let vec_closure = |s: &String| vec_candidates.push(s.clone());
-        let n_slice_candidates = dc_slice.check_for_candidates(start, end, slice_closure);
-        let n_vec_candidates = dc_vec.check_for_candidates(start, end, vec_closure);
-        assert_eq!(n_slice_candidates, n_vec_candidates);
-        assert_eq!(slice_candidates.len(), n_slice_candidates as usize);
-        assert_eq!(vec_candidates.len(), n_vec_candidates as usize);
-        assert_eq!(slice_candidates.len(), vec_candidates.len());
-        for (vec_candidate, slice_candidate) in vec_candidates.iter().zip(slice_candidates.iter()) {
-            assert_eq!(vec_candidate, slice_candidate);
-        }
-    }
 
     #[test]
     fn test_slice_buffer_size_is_multiple_of_3_and_4() {
@@ -144,10 +115,21 @@ mod tests {
 
     #[test]
     fn test_upper_estimate_does_not_panic() {
+        fn test_slice(slice: &mut [u8], subst: &[u8], expected_size: usize) {
+            for (idx, ch) in subst.iter().enumerate() {
+                slice[slice.len() - subst.len() + idx] = *ch;
+            }
+            let mut dc = Decipherer::from_slice(slice);
+            let d = |s: &String| assert_eq!(s.len(), expected_size);
+            let found = dc.check_for_candidates(0, 0, d);
+            assert_eq!(found, 1)
+        }
+
         const INPUT_LEN: usize = (SLICE_BUFFER_SIZE / 3) * 4;
         assert_eq!(INPUT_LEN + 3 / 4 * 3, INPUT_LEN);
         assert_eq!(INPUT_LEN % 4, 0);
         assert!(SLICE_BUFFER_SIZE > 0);
+
         test_slice(&mut [b'6'; INPUT_LEN - 4], b"", SLICE_BUFFER_SIZE - 3);
         test_slice(&mut [b'6'; INPUT_LEN], b"", SLICE_BUFFER_SIZE);
         test_slice(&mut [b'6'; INPUT_LEN + 4], b"", SLICE_BUFFER_SIZE + 3);
@@ -172,6 +154,31 @@ mod tests {
                 let v = base64::encode_config(case, base64::STANDARD);
                 test_implementation_equality(v.as_bytes(), *start, *end);
             }
+        }
+    }
+
+    fn test_implementation_equality(text: &[u8], start: Id, end: Id) {
+        enum Func { Slice, Vec }
+        let save_candidates = |func: Func| {
+            let mut dc = Decipherer::from_slice(text);
+            let mut candidates = Vec::new();
+            let on_candidates = |s: &String| candidates.push(s.clone());
+            let n = match func {
+                Func::Slice => dc.check_for_candidates(start, end, on_candidates),
+                Func::Vec => dc.check_for_candidates_vec(start, end, on_candidates)
+            };
+            (n, candidates)
+        };
+
+        let (slice_found, slice_candidates) = save_candidates(Func::Slice);
+        let (vec_found, vec_candidates) = save_candidates(Func::Vec);
+
+        assert_eq!(slice_found, vec_found);
+        assert_eq!(slice_candidates.len(), slice_found as usize);
+        assert_eq!(vec_candidates.len(), vec_found as usize);
+        assert_eq!(slice_candidates.len(), vec_candidates.len());
+        for (vec_candidate, slice_candidate) in vec_candidates.iter().zip(slice_candidates.iter()) {
+            assert_eq!(vec_candidate, slice_candidate);
         }
     }
 }
